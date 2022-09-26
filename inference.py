@@ -8,8 +8,15 @@ import torchvision
 import torchvision.models as models
 import torchvision.transforms as transforms
 import os
-import argparse
-from PIL import ImageFile
+import sys
+
+import json
+import logging
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.StreamHandler(sys.stdout))
+JSON_CONTENT_TYPE = 'application/json'
+JPEG_CONTENT_TYPE = 'image/jpeg'
 
   
 def net():
@@ -17,19 +24,58 @@ def net():
     TODO: Complete this function that initializes your model
           Remember to use a pretrained model
     '''
-    model = models.mobilenet_v3_large(pretrained=True)
+    model = models.resnet18(pretrained=True)
+    feat_count = model.fc.in_features
 
     for param in model.parameters():
-        param.requires_grad = False
+        param.requires_grad = False   
 
-    model.classifier[-1] = nn.Linear(1280, 133) #num of dog classes is 133
-    
+    model.fc = nn.Sequential(nn.Linear(feat_count, 133))
     return model
 
 
 def model_fn(model_dir):
-    model = net()
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = net().to(device)
+
     with open(os.path.join(model_dir, 'model.pth'), 'rb') as f:
         model.load_state_dict(torch.load(f))
+        
+    model.eval()
     return model
 
+def input_fn(request_body, content_type=JPEG_CONTENT_TYPE):
+    logger.info('Deserializing the input data.')
+    # process an image uploaded to the endpoint
+    #if content_type == JPEG_CONTENT_TYPE: return io.BytesIO(request_body)
+    logger.debug(f'Request body CONTENT-TYPE is: {content_type}')
+    logger.debug(f'Request body TYPE is: {type(request_body)}')
+    if content_type == JPEG_CONTENT_TYPE: return Image.open(io.BytesIO(request_body))
+    logger.debug('SO loded JPEG content')
+    # process a URL submitted to the endpoint
+    
+    if content_type == JSON_CONTENT_TYPE:
+        #img_request = requests.get(url)
+        logger.debug(f'Request body is: {request_body}')
+        request = json.loads(request_body)
+        logger.debug(f'Loaded JSON object: {request}')
+        url = request['url']
+        img_content = requests.get(url).content
+        return Image.open(io.BytesIO(img_content))
+    
+    raise Exception('Requested unsupported ContentType in content_type: {}'.format(content_type))
+    
+def predict_fn(input_object, model):
+    logger.info('In predict fn')
+    test_transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    ])
+    logger.info("transforming input")
+    input_object=test_transform(input_object)
+    
+    with torch.no_grad():
+        logger.info("Calling model")
+        prediction = model(input_object.unsqueeze(0))
+    return prediction

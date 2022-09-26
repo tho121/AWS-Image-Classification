@@ -90,13 +90,13 @@ def net():
     TODO: Complete this function that initializes your model
           Remember to use a pretrained model
     '''
-    model = models.mobilenet_v3_large(pretrained=True)
+    model = models.resnet18(pretrained=True)
+    feat_count = model.fc.in_features
 
     for param in model.parameters():
-        param.requires_grad = False
+        param.requires_grad = False   
 
-    model.classifier[-1] = nn.Linear(1280, 133) #num of dog classes is 133
-    
+    model.fc = nn.Sequential(nn.Linear(feat_count, 133))
     return model
 
 def create_data_loaders(data, batch_size):
@@ -150,6 +150,7 @@ def main(args):
     val_loader = create_data_loaders(val_data, args.batch_size)
     test_loader = create_data_loaders(test_data, args.batch_size)
     
+    path = os.path.join(args.model_dir, "model.pth")
     
     for e in range(args.epochs):
         model=train(model, train_loader, loss_criterion, optimizer, hook)
@@ -158,13 +159,13 @@ def main(args):
         TODO: Test the model to see its accuracy
         '''
         test(model, test_loader, hook)
+        
+        '''
+        TODO: Save the trained model
+        '''
+        torch.save(model, path)
     
-    '''
-    TODO: Save the trained model
-    '''
-    path = os.path.join(args.model_dir, "model.pth")
-    torch.save(model, path)
-
+    
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     '''
